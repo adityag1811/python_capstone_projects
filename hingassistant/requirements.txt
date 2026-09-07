@@ -1,4 +1,5 @@
 openpyxl
 python-telegram-bot
 python-dotenv
-flask
+flask[async]
+gunicorn

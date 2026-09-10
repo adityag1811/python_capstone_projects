@@ -1,10 +1,7 @@
 import os
-import asyncio
 import openpyxl
 
 from dotenv import load_dotenv
-from flask import Flask, request
-
 from telegram import Update
 from telegram.ext import (
     Application,
@@ -15,8 +12,11 @@ from telegram.ext import (
     filters
 )
 
-from excel_reader import get_ingredients, get_cost
-from calculate_quantity import calculate_quantity
+from starlette.applications import Starlette
+from starlette.requests import Request
+from starlette.responses import PlainTextResponse
+from starlette.routing import Route
+from uvicorn import run
 
 
 load_dotenv()
@@ -28,7 +28,12 @@ wb = openpyxl.load_workbook("formula.xlsx", data_only=True)
 PRODUCT, QUANTITY = range(2)
 
 
-application = Application.builder().token(bot_token).build()
+application = (
+    Application.builder()
+    .token(bot_token)
+    .updater(None)
+    .build()
+)
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -64,7 +69,6 @@ async def get_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def get_quantity(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
-
         required_qty = int(update.message.text)
 
     except ValueError:
@@ -119,7 +123,6 @@ Step 1
 """
 
     for key, value in step_1.items():
-
         response += f"\n{key}: {value} Kg"
 
     if step_2:
@@ -127,7 +130,6 @@ Step 1
         response += "\n\nStep 2"
 
         for key, value in step_2.items():
-
             response += f"\n{key}: {value} Kg"
 
     if step_3:
@@ -135,7 +137,6 @@ Step 1
         response += "\n\nStep 3"
 
         for key, value in step_3.items():
-
             response += f"\n{key}: {value} Kg"
 
     response += f"\n\nNet Cost: ₹{product_costing} per kg"
@@ -187,34 +188,40 @@ conversation_handler = ConversationHandler(
 application.add_handler(conversation_handler)
 
 
-app = Flask(__name__)
+async def telegram_webhook(request: Request):
 
-
-@app.route("/", methods=["GET"])
-def home():
-
-    return "HingFormula Bot is running!"
-
-
-@app.route("/webhook", methods=["POST"])
-async def webhook():
-
-    data = request.get_json()
+    data = await request.json()
 
     update = Update.de_json(
         data,
         application.bot
     )
 
-    await application.process_update(update)
+    await application.update_queue.put(update)
 
-    return "OK"
-
-
-async def initialize_bot():
-
-    await application.initialize()
-    await application.start()
+    return PlainTextResponse("OK")
 
 
-asyncio.run(initialize_bot())
+async def homepage(request: Request):
+
+    return PlainTextResponse(
+        "HingFormula Bot is running!"
+    )
+
+
+routes = [
+    Route("/", homepage, methods=["GET"]),
+    Route("/telegram", telegram_webhook, methods=["POST"])
+]
+
+
+app = Starlette(routes=routes)
+
+
+if __name__ == "__main__":
+
+    run(
+        app,
+        host="0.0.0.0",
+        port=int(os.environ.get("PORT", 5000))
+    )
